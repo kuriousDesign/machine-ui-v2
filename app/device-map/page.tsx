@@ -3,7 +3,8 @@
 import Link from "next/link";
 
 import { SectionCard } from "@/components/section-card";
-import { useBridgeState, useDeviceMetaData, useDeviceState } from "@/lib/store/zustand-provider";
+import type { TopicMessageSummary } from "@/lib/store/bridge-store";
+import { useBridgeState, useDeviceMeta } from "@/lib/store/zustand-provider";
 
 export default function DeviceMapPage() {
   const orderedIds = useBridgeState((state) => state.deviceMap.orderedIds);
@@ -49,8 +50,7 @@ function DeviceCard({
   };
   topicPrefix: string;
 }) {
-  const deviceMetaData = useDeviceMetaData(deviceId, (state) => state);
-  const deviceState = useDeviceState(deviceId, (state) => state);
+  const deviceMetaData = useDeviceMeta(deviceId, (state) => state);
 
   return (
     <div className="rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow)]">
@@ -107,14 +107,28 @@ function DeviceCard({
 
         <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">State topics</p>
         <ul className="mt-3 space-y-2 text-xs text-[var(--foreground)]">
-          <li className="font-mono">cfg: {deviceState.cfgMessage?.topic ?? "pending"}</li>
-          <li className="font-mono">is: {deviceState.isMessage?.topic ?? "pending"}</li>
-          <li className="font-mono">sts: {deviceState.stsMessage?.topic ?? "pending"}</li>
-          <li className="font-mono">log: {deviceState.logMessage?.topic ?? "pending"}</li>
+          <li className="font-mono">cfg: {formatTopicSummary(deviceMetaData.runtimeTopicSummaries.cfg)}</li>
+          <li className="font-mono">is: {formatTopicSummary(deviceMetaData.runtimeTopicSummaries.is)}</li>
+          <li className="font-mono">sts: {formatTopicSummary(deviceMetaData.runtimeTopicSummaries.sts)}</li>
+          <li className="font-mono">log: {formatTopicSummary(deviceMetaData.runtimeTopicSummaries.log)}</li>
+        </ul>
+
+        <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">Runtime</p>
+        <ul className="mt-3 space-y-2 text-xs text-[var(--foreground)]">
+          <li className="font-mono">last seen: {deviceMetaData.lastSeenAt ? new Date(deviceMetaData.lastSeenAt).toLocaleString() : "pending"}</li>
+          <li className="font-mono">topic prefix: {deviceMetaData.topicPrefix ?? "pending"}</li>
         </ul>
       </div>
     </div>
   );
+}
+
+function formatTopicSummary(summary: TopicMessageSummary | undefined) {
+  if (!summary) {
+    return "pending";
+  }
+
+  return `${summary.source} · ${new Date(summary.receivedAt).toLocaleString()}`;
 }
 
 function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

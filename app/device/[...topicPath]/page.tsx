@@ -2,11 +2,39 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 
 import { SectionCard } from "@/components/section-card";
-import { getTagTopicsPayload } from "@/lib/bridge/types";
-import { useBridgeState, useDeviceMetaData, useDeviceState } from "@/lib/store/zustand-provider";
+import type { DeviceRuntimeTopicSummaryKey, TopicMessageSummary } from "@/lib/store/bridge-store";
+import { useDeviceComprehensive } from "@/lib/store/zustand-provider";
+
+type RuntimeEntry = {
+  label: string;
+  receivedAt?: number | null;
+  source?: TopicMessageSummary["source"] | null;
+  topic?: string | null;
+  value: unknown;
+};
+
+function hasDisplayValue(value: unknown): boolean {
+  if (value == null) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0;
+  }
+
+  return true;
+}
 
 export default function DeviceDetailsPage() {
   const params = useParams<{ topicPath?: string[] | string }>();
@@ -16,69 +44,68 @@ export default function DeviceDetailsPage() {
     : typeof rawTopicPath === "string"
       ? [rawTopicPath]
       : [];
+  const rawDeviceId = topicPath.at(-1);
+  const deviceId = rawDeviceId ? Number(rawDeviceId) : Number.NaN;
+  const hasValidDeviceId = Number.isInteger(deviceId) && deviceId > 0;
 
   const topicPrefix = topicPath.length > 0 ? `machine/${topicPath.join("/")}` : null;
-  const deviceId = useBridgeState((state) => {
-    if (!topicPrefix) {
-      return null;
-    }
+  const selectedDeviceId = hasValidDeviceId ? deviceId : -1;
 
-    const match = Object.entries(state.deviceMap.topicPrefixes).find(([, prefix]) => prefix === topicPrefix);
-    return match ? Number(match[0]) : null;
-  });
-
-  const deviceState = useDeviceState(deviceId ?? -1, (state) => state);
-  const deviceMetaData = useDeviceMetaData(deviceId ?? -1, (state) => state);
+  const device = useDeviceComprehensive(selectedDeviceId, (state) => state);
+  const deviceState = device.runtime;
+  const deviceMetaData = device.meta;
   const registration = deviceState.registration ?? deviceMetaData.device;
-  const cacheSnapshot = useBridgeState((state) => state.cache.payload);
-  const tagTopics = getTagTopicsPayload(cacheSnapshot);
+  const resolvedTopicPrefix = deviceMetaData.topicPrefix;
   const runtimeEntries = useMemo(
-    () => [
-      { label: "registration", value: deviceState.registration },
-      { label: "cfg", value: deviceState.cfg },
-      { label: "is", value: deviceState.is },
-      { label: "errors", value: deviceState.errors },
-      { label: "warnings", value: deviceState.warnings },
-      { label: "mutedChildrenArray", value: deviceState.mutedChildrenArray },
-      { label: "execMethod", value: deviceState.execMethod },
-      { label: "task", value: deviceState.task },
-      { label: "process", value: deviceState.process },
-      { label: "script", value: deviceState.script },
-      { label: "connectionStatus", value: deviceState.connectionStatus },
-      { label: "apiOpcua", value: deviceState.apiOpcua },
-      { label: "log", value: deviceState.log },
-      { label: "sts", value: deviceState.sts },
-      { label: "inputs", value: deviceState.inputs },
-      { label: "outputs", value: deviceState.outputs },
-      { label: "topicPrefix", value: deviceState.topicPrefix },
-      { label: "lastSeenAt", value: deviceState.lastSeenAt },
-      { label: "cfgMessage", value: deviceState.cfgMessage },
-      { label: "isMessage", value: deviceState.isMessage },
-      { label: "stsMessage", value: deviceState.stsMessage },
-      { label: "logMessage", value: deviceState.logMessage },
-    ],
-    [deviceState],
+    () => {
+      const createEntry = (
+        label: string,
+        value: unknown,
+        options?: {
+          suffix?: string;
+          summaryKey?: DeviceRuntimeTopicSummaryKey;
+        },
+      ): RuntimeEntry => {
+        const summary = options?.summaryKey ? deviceMetaData.runtimeTopicSummaries[options.summaryKey] : undefined;
+
+        return {
+          label,
+          receivedAt: summary?.receivedAt ?? null,
+          source: summary?.source ?? null,
+          topic: options?.suffix && resolvedTopicPrefix ? `${resolvedTopicPrefix}/${options.suffix}` : null,
+          value,
+        };
+      };
+
+      return [
+        createEntry("registration", deviceState.registration),
+        createEntry("cfg", deviceState.cfg, { suffix: "cfg", summaryKey: "cfg" }),
+        createEntry("is", deviceState.is, { suffix: "is", summaryKey: "is" }),
+        createEntry("errors", deviceState.errors, { suffix: "errors", summaryKey: "errors" }),
+        createEntry("warnings", deviceState.warnings, { suffix: "warnings", summaryKey: "warnings" }),
+        createEntry("mutedChildrenArray", deviceState.mutedChildrenArray, { suffix: "mutedchildrenarray", summaryKey: "mutedChildrenArray" }),
+        createEntry("execMethod", deviceState.execMethod, { suffix: "execmethod", summaryKey: "execMethod" }),
+        createEntry("task", deviceState.task, { suffix: "task", summaryKey: "task" }),
+        createEntry("process", deviceState.process, { suffix: "process", summaryKey: "process" }),
+        createEntry("script", deviceState.script, { suffix: "script", summaryKey: "script" }),
+        createEntry("connectionStatus", deviceState.connectionStatus),
+        createEntry("apiOpcua.hmiReq", deviceState.apiOpcua && typeof deviceState.apiOpcua === "object" ? (deviceState.apiOpcua as Record<string, unknown>).hmiReq : undefined, { suffix: "apiopcua/hmireq", summaryKey: "apiOpcuaHmiReq" }),
+        createEntry("apiOpcua.hmiResp", deviceState.apiOpcua && typeof deviceState.apiOpcua === "object" ? (deviceState.apiOpcua as Record<string, unknown>).hmiResp : undefined, { suffix: "apiopcua/hmiresp", summaryKey: "apiOpcuaHmiResp" }),
+        createEntry("apiOpcua.internalReq", deviceState.apiOpcua && typeof deviceState.apiOpcua === "object" ? (deviceState.apiOpcua as Record<string, unknown>).internalReq : undefined, { suffix: "apiopcua/internalreq", summaryKey: "apiOpcuaInternalReq" }),
+        createEntry("apiOpcua.internalResp", deviceState.apiOpcua && typeof deviceState.apiOpcua === "object" ? (deviceState.apiOpcua as Record<string, unknown>).internalResp : undefined, { suffix: "apiopcua/internalresp", summaryKey: "apiOpcuaInternalResp" }),
+        createEntry("log", deviceState.log, { suffix: "log", summaryKey: "log" }),
+        createEntry("sts", deviceState.sts, { suffix: "sts", summaryKey: "sts" }),
+        createEntry("inputs", deviceState.inputs),
+        createEntry("outputs", deviceState.outputs),
+        createEntry("topicPrefix", deviceMetaData.topicPrefix),
+        createEntry("lastSeenAt", deviceMetaData.lastSeenAt),
+      ].filter((entry) => hasDisplayValue(entry.value));
+    },
+    [deviceMetaData.lastSeenAt, deviceMetaData.runtimeTopicSummaries, deviceState, resolvedTopicPrefix],
   );
-  const matchingDiagnostics = useMemo(() => {
-    if (!deviceMetaData.topicPrefix) {
-      return [];
-    }
+  const matchingDiagnostics = deviceMetaData.tagTopics;
 
-    return toTagTopicArray(tagTopics)
-      .filter((entry) => entry && typeof entry === "object")
-      .map((entry) => entry as Record<string, unknown>)
-      .filter((entry) => {
-        const mqttTopic = getString(entry.mqttTopic) ?? getString(entry.topic);
-        return mqttTopic ? mqttTopic === deviceMetaData.topicPrefix || mqttTopic.startsWith(`${deviceMetaData.topicPrefix}/`) : false;
-      })
-      .sort((left, right) => {
-        const leftTopic = getString(left.mqttTopic) ?? "";
-        const rightTopic = getString(right.mqttTopic) ?? "";
-        return leftTopic.localeCompare(rightTopic);
-      });
-  }, [deviceMetaData.topicPrefix, tagTopics]);
-
-  if (!topicPrefix || topicPath.length === 0) {
+  if (!topicPrefix || topicPath.length === 0 || !hasValidDeviceId) {
     return <EmptyState title="Invalid device path" message="Provide a device path like /device/1 or /device/1/4." />;
   }
 
@@ -100,7 +127,7 @@ export default function DeviceDetailsPage() {
         <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Detail label="Mnemonic" value={registration.mnemonic} />
-            <Detail label="Topic prefix" value={deviceState.topicPrefix ?? deviceMetaData.topicPrefix ?? "Unknown"} mono />
+            <Detail label="Topic prefix" value={deviceMetaData.topicPrefix ?? "Unknown"} mono />
             <Detail label="Parent ID" value={String(registration.parentId)} />
             <Detail label="Child IDs" value={registration.childIdArray.join(", ") || "None"} />
             <Detail label="Device type" value={String(registration.deviceType)} />
@@ -121,8 +148,8 @@ export default function DeviceDetailsPage() {
       </SectionCard>
 
       <SectionCard
-        title="Device State"
-        description="Canonical device payload selectors from Zustand for cfg, is, sts, and log topics."
+        title="Runtime State"
+        description="Combined device-scoped Zustand view, including parsed runtime fields and raw message envelopes exposed through popovers."
       >
         {deviceState.is ? (
           <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -136,28 +163,22 @@ export default function DeviceDetailsPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StateCard label="cfg" message={deviceState.cfgMessage} />
-          <StateCard label="is" message={deviceState.isMessage} />
-          <StateCard label="sts" message={deviceState.stsMessage} />
-          <StateCard label="log" message={deviceState.logMessage} />
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title="All Runtime Fields"
-        description="Complete view of every field currently available on DeviceRuntimeState, including parsed device data and raw MQTT topic envelopes."
-      >
         <div className="grid gap-4 md:grid-cols-2">
           {runtimeEntries.map((entry) => (
-            <RuntimeFieldCard key={entry.label} label={entry.label} value={entry.value} />
+            <RuntimeFieldCard
+              key={entry.label}
+              label={entry.label}
+              receivedAt={entry.receivedAt}
+              topic={entry.topic}
+              value={entry.value}
+            />
           ))}
         </div>
       </SectionCard>
 
       <SectionCard
         title="Subscribed Topics"
-        description="All active BridgeProvider subscriptions under this device topic prefix, even if they have not emitted a payload yet."
+        description="Compact list of active subscriptions under this device topic prefix."
       >
         {deviceMetaData.subscribedTopics.length > 0 ? (
           <TopicList topics={deviceMetaData.subscribedTopics} />
@@ -182,9 +203,13 @@ export default function DeviceDetailsPage() {
                     {topicMessage.source} · {new Date(topicMessage.receivedAt).toLocaleString()}
                   </p>
                 </div>
-                <pre className="mt-3 overflow-auto text-xs text-[var(--foreground)]">
-                  {JSON.stringify(topicMessage.payload, null, 2)}
-                </pre>
+                <div className="mt-3 flex justify-end">
+                  <PayloadPopover
+                    label={`Payload for ${topicMessage.topic}`}
+                    payload={topicMessage.payload}
+                    buttonLabel="View payload"
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -234,9 +259,13 @@ export default function DeviceDetailsPage() {
 
 function TopicList({ topics }: { topics: string[] }) {
   return (
-    <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+    <ul className="flex flex-wrap gap-2">
       {topics.map((topic) => (
-        <li key={topic} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 font-mono text-xs text-[var(--foreground)]">
+        <li
+          key={topic}
+          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 font-mono text-[11px] leading-5 text-[var(--foreground)]"
+          title={topic}
+        >
           {topic}
         </li>
       ))}
@@ -244,28 +273,70 @@ function TopicList({ topics }: { topics: string[] }) {
   );
 }
 
-function StateCard({ label, message }: { label: string; message: { payload: unknown; receivedAt: number; topic: string } | null }) {
+function PayloadPopover({
+  buttonLabel,
+  label,
+  payload,
+}: {
+  buttonLabel: string;
+  label: string;
+  payload: unknown;
+}) {
+  const popoverId = useId().replace(/:/g, "");
+
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
-      <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-mono text-xs text-[var(--accent-strong)]">{message?.topic ?? "pending"}</p>
-      {message ? (
-        <>
-          <p className="mt-2 text-xs text-[var(--muted)]">{new Date(message.receivedAt).toLocaleString()}</p>
-          <pre className="mt-3 overflow-auto text-xs text-[var(--foreground)]">{JSON.stringify(message.payload, null, 2)}</pre>
-        </>
-      ) : (
-        <p className="mt-3 text-sm text-[var(--muted)]">No payload captured yet.</p>
-      )}
-    </div>
+    <>
+      <button
+        type="button"
+        popoverTarget={popoverId}
+        className="rounded-xl border border-[var(--border)] bg-white/70 px-3 py-2 text-xs font-medium text-[var(--foreground)] transition-colors duration-200 hover:bg-white"
+      >
+        {buttonLabel}
+      </button>
+      <div
+        id={popoverId}
+        popover="auto"
+        className="max-h-[70vh] max-w-[min(90vw,720px)] overflow-auto rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-2xl backdrop:bg-slate-950/20"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{label}</p>
+          <button
+            type="button"
+            popoverTarget={popoverId}
+            popoverTargetAction="hide"
+            className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-colors duration-200 hover:bg-slate-100"
+          >
+            Close
+          </button>
+        </div>
+        <pre className="mt-4 overflow-auto rounded-2xl bg-slate-50 p-4 text-xs text-slate-800">{formatUnknown(payload)}</pre>
+      </div>
+    </>
   );
 }
 
-function RuntimeFieldCard({ label, value }: { label: string; value: unknown }) {
+function RuntimeFieldCard({
+  label,
+  receivedAt,
+  source,
+  topic,
+  value,
+}: {
+  label: string;
+  receivedAt?: number | null;
+  source?: TopicMessageSummary["source"] | null;
+  topic?: string | null;
+  value: unknown;
+}) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <p className="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">{label}</p>
-      <pre className="mt-3 overflow-auto text-xs text-[var(--foreground)]">{formatUnknown(value)}</pre>
+      {topic ? <p className="mt-2 font-mono text-xs text-[var(--accent-strong)]">{topic}</p> : null}
+      {receivedAt ? <p className="mt-2 text-xs text-[var(--muted)]">Last {source ?? "unknown"} message {formatTimestamp(receivedAt)}</p> : null}
+      <p className="mt-3 line-clamp-3 text-xs text-[var(--foreground)]">{formatPreview(value)}</p>
+      <div className="mt-3 flex justify-end">
+        <PayloadPopover label={`${label} value`} payload={value} buttonLabel="View payload" />
+      </div>
     </div>
   );
 }
@@ -290,33 +361,6 @@ function EmptyState({ title, message }: { title: string; message: string }) {
       </Link>
     </SectionCard>
   );
-}
-
-function toTagTopicArray(tagTopics: unknown): unknown[] {
-  if (!tagTopics) {
-    return [];
-  }
-
-  if (Array.isArray(tagTopics)) {
-    return tagTopics;
-  }
-
-  if (typeof tagTopics === "object") {
-    const record = tagTopics as Record<string, unknown>;
-    if (Array.isArray(record.items)) {
-      return record.items;
-    }
-
-    return Object.entries(record).map(([key, value]) => {
-      if (value && typeof value === "object") {
-        return { key, ...(value as Record<string, unknown>) };
-      }
-
-      return { key, value };
-    });
-  }
-
-  return [tagTopics];
 }
 
 function getString(value: unknown) {
@@ -345,4 +389,18 @@ function formatUnknown(value: unknown) {
   } catch {
     return String(value);
   }
+}
+
+function formatPreview(value: unknown) {
+  const formatted = formatUnknown(value);
+
+  if (formatted.length <= 160) {
+    return formatted;
+  }
+
+  return `${formatted.slice(0, 157)}...`;
+}
+
+function formatTimestamp(timestamp: number | null) {
+  return timestamp ? new Date(timestamp).toLocaleString() : "Pending";
 }

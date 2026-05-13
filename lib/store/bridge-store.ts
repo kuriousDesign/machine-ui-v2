@@ -4,6 +4,7 @@ import {
   buildFullTopicPath,
   type Device,
   type DeviceCfg,
+  type DeviceFaultData,
   type DeviceLogData,
   type DeviceRegistration,
   type DeviceStatus,
@@ -13,6 +14,7 @@ import type {
   BridgeStatusPayload,
   DeviceMapEntry,
 } from "@/lib/bridge/types";
+import { getTagTopicsPayload } from "@/lib/bridge/types";
 
 export type MqttPhase =
   | "idle"
@@ -29,6 +31,30 @@ export interface TopicMessage {
   timestamp: number | null;
   topic: string;
 }
+
+export interface TopicMessageSummary {
+  receivedAt: number;
+  source: TopicMessage["source"];
+}
+
+export type DeviceRuntimeTopicSummaryKey =
+  | "apiOpcuaHmiReq"
+  | "apiOpcuaHmiResp"
+  | "apiOpcuaInternalReq"
+  | "apiOpcuaInternalResp"
+  | "cfg"
+  | "errors"
+  | "execMethod"
+  | "is"
+  | "log"
+  | "mutedChildrenArray"
+  | "process"
+  | "script"
+  | "sts"
+  | "task"
+  | "warnings";
+
+export type DeviceRuntimeTopicSummaries = Partial<Record<DeviceRuntimeTopicSummaryKey, TopicMessageSummary>>;
 
 export interface BridgeStoreState {
   cache: {
@@ -80,18 +106,21 @@ export interface BridgeStoreState {
 
 export interface DeviceScopedState {
   device: DeviceRegistration | null;
+  lastSeenAt: number | null;
+  runtimeTopicSummaries: DeviceRuntimeTopicSummaries;
   subscribedTopics: string[];
+  tagTopics: Record<string, unknown>[];
   topicPrefix: string | null;
   topics: TopicMessage[];
 }
 
 export interface DeviceRuntimeState extends Partial<Device> {
-  cfgMessage: TopicMessage | null;
-  isMessage: TopicMessage | null;
-  lastSeenAt: number | null;
-  logMessage: TopicMessage | null;
-  stsMessage: TopicMessage | null;
-  topicPrefix: string | null;
+}
+
+export interface DeviceComprehensiveState {
+  deviceId: number;
+  meta: DeviceScopedState;
+  runtime: DeviceRuntimeState;
 }
 
 export interface MachineScopedState {
@@ -100,6 +129,8 @@ export interface MachineScopedState {
 
 const EMPTY_TOPICS: TopicMessage[] = [];
 const EMPTY_TOPIC_PATHS: string[] = [];
+const EMPTY_TAG_TOPICS: Record<string, unknown>[] = [];
+const EMPTY_RUNTIME_TOPIC_SUMMARIES: DeviceRuntimeTopicSummaries = {};
 
 const machineStateCache: {
   result: MachineScopedState;
@@ -127,18 +158,13 @@ const EMPTY_DEVICE_RUNTIME_STATE: DeviceRuntimeState = {
   sts: undefined,
   inputs: undefined,
   outputs: undefined,
-  cfgMessage: null,
   is: undefined,
-  isMessage: null,
-  lastSeenAt: null,
-  logMessage: null,
-  stsMessage: null,
-  topicPrefix: null,
 };
 
 const deviceStateCache = new Map<
   number,
   {
+    cachePayloadRef: BridgeStoreState["cache"]["payload"] | null;
     deviceRef: DeviceRegistration | null;
     result: DeviceScopedState;
     subscribedTopicsRef: BridgeStoreState["subscriptions"]["activeTopics"] | null;
@@ -154,6 +180,15 @@ const deviceRuntimeStateCache = new Map<
     result: DeviceRuntimeState;
     topicPrefix: string | null;
     topicsRef: BridgeStoreState["topics"] | null;
+  }
+>();
+
+const deviceComprehensiveStateCache = new Map<
+  number,
+  {
+    metaRef: DeviceScopedState | null;
+    result: DeviceComprehensiveState;
+    runtimeRef: DeviceRuntimeState | null;
   }
 >();
 
@@ -308,6 +343,50 @@ function sortMessages(messages: TopicMessage[]) {
   return messages.slice().sort((left, right) => left.topic.localeCompare(right.topic));
 }
 
+function toTopicMessageSummary(message: TopicMessage | null): TopicMessageSummary | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  return {
+    receivedAt: message.receivedAt,
+    source: message.source,
+  };
+}
+
+function toTagTopicEntries(tagTopics: unknown): Record<string, unknown>[] {
+  if (!tagTopics) {
+    return EMPTY_TAG_TOPICS;
+  }
+
+  if (Array.isArray(tagTopics)) {
+    return tagTopics.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object");
+  }
+
+  if (typeof tagTopics === "object") {
+    const record = tagTopics as Record<string, unknown>;
+
+    if (Array.isArray(record.items)) {
+      return record.items.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object");
+    }
+
+    return Object.entries(record).map(([key, value]) => {
+      if (value && typeof value === "object") {
+        return { key, ...(value as Record<string, unknown>) };
+      }
+
+      return { key, value };
+    });
+  }
+
+  return EMPTY_TAG_TOPICS;
+}
+
+function getTagTopicString(entry: Record<string, unknown>, key: string): string | null {
+  const value = entry[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 export function selectDeviceMetaData(state: BridgeStoreState, deviceId: number): DeviceScopedState {
   const device = state.deviceMap.byId[deviceId] ?? null;
   const topicPrefix = state.deviceMap.topicPrefixes[deviceId] ?? null;
@@ -315,6 +394,7 @@ export function selectDeviceMetaData(state: BridgeStoreState, deviceId: number):
 
   if (
     cached &&
+    cached.cachePayloadRef === state.cache.payload &&
     cached.deviceRef === device &&
     cached.subscribedTopicsRef === state.subscriptions.activeTopics &&
     cached.topicPrefix === topicPrefix &&
@@ -326,12 +406,16 @@ export function selectDeviceMetaData(state: BridgeStoreState, deviceId: number):
   if (!topicPrefix) {
     const result = {
       device,
+      lastSeenAt: null,
+      runtimeTopicSummaries: EMPTY_RUNTIME_TOPIC_SUMMARIES,
       subscribedTopics: EMPTY_TOPIC_PATHS,
+      tagTopics: EMPTY_TAG_TOPICS,
       topicPrefix: null,
       topics: EMPTY_TOPICS,
     };
 
     deviceStateCache.set(deviceId, {
+      cachePayloadRef: state.cache.payload,
       deviceRef: device,
       result,
       subscribedTopicsRef: state.subscriptions.activeTopics,
@@ -349,15 +433,48 @@ export function selectDeviceMetaData(state: BridgeStoreState, deviceId: number):
   const topics = Object.values(state.topics).filter((topicMessage) => {
     return topicMessage.topic === topicPrefix || topicMessage.topic.startsWith(`${topicPrefix}/`);
   });
+  const runtimeTopicSummaries = {
+    cfg: toTopicMessageSummary(state.topics[`${topicPrefix}/cfg`] ?? null),
+    errors: toTopicMessageSummary(state.topics[`${topicPrefix}/errors`] ?? null),
+    warnings: toTopicMessageSummary(state.topics[`${topicPrefix}/warnings`] ?? null),
+    mutedChildrenArray: toTopicMessageSummary(state.topics[`${topicPrefix}/mutedchildrenarray`] ?? null),
+    execMethod: toTopicMessageSummary(state.topics[`${topicPrefix}/execmethod`] ?? null),
+    task: toTopicMessageSummary(state.topics[`${topicPrefix}/task`] ?? null),
+    process: toTopicMessageSummary(state.topics[`${topicPrefix}/process`] ?? null),
+    script: toTopicMessageSummary(state.topics[`${topicPrefix}/script`] ?? null),
+    is: toTopicMessageSummary(state.topics[`${topicPrefix}/is`] ?? null),
+    sts: toTopicMessageSummary(state.topics[`${topicPrefix}/sts`] ?? null),
+    log: toTopicMessageSummary(state.topics[`${topicPrefix}/log`] ?? null),
+    apiOpcuaHmiReq: toTopicMessageSummary(state.topics[`${topicPrefix}/apiopcua/hmireq`] ?? null),
+    apiOpcuaHmiResp: toTopicMessageSummary(state.topics[`${topicPrefix}/apiopcua/hmiresp`] ?? null),
+    apiOpcuaInternalReq: toTopicMessageSummary(state.topics[`${topicPrefix}/apiopcua/internalreq`] ?? null),
+    apiOpcuaInternalResp: toTopicMessageSummary(state.topics[`${topicPrefix}/apiopcua/internalresp`] ?? null),
+  } satisfies DeviceRuntimeTopicSummaries;
+  const tagTopicEntries = toTagTopicEntries(getTagTopicsPayload(state.cache.payload));
+  const tagTopics = tagTopicEntries
+    .filter((entry) => {
+      const mqttTopic = getTagTopicString(entry, "mqttTopic") ?? getTagTopicString(entry, "topic");
+      return mqttTopic ? mqttTopic === topicPrefix || mqttTopic.startsWith(`${topicPrefix}/`) : false;
+    })
+    .sort((left, right) => {
+      const leftTopic = getTagTopicString(left, "mqttTopic") ?? getTagTopicString(left, "topic") ?? "";
+      const rightTopic = getTagTopicString(right, "mqttTopic") ?? getTagTopicString(right, "topic") ?? "";
+      return leftTopic.localeCompare(rightTopic);
+    });
+  const lastSeenAt = getLastSeenAt(topics);
 
   const result = {
     device,
+    lastSeenAt,
+    runtimeTopicSummaries,
     subscribedTopics: subscribedTopics.length > 0 ? subscribedTopics.slice().sort((left, right) => left.localeCompare(right)) : EMPTY_TOPIC_PATHS,
+    tagTopics: tagTopics.length > 0 ? tagTopics : EMPTY_TAG_TOPICS,
     topicPrefix,
     topics: topics.length > 0 ? sortMessages(topics) : EMPTY_TOPICS,
   };
 
   deviceStateCache.set(deviceId, {
+    cachePayloadRef: state.cache.payload,
     deviceRef: device,
     result,
     subscribedTopicsRef: state.subscriptions.activeTopics,
@@ -425,24 +542,45 @@ export function selectDeviceState(state: BridgeStoreState, deviceId: number): De
   }
 
   const cfgMessage = getTopicMessage(state, `${topicPrefix}/cfg`);
+  const errorsMessage = getTopicMessage(state, `${topicPrefix}/errors`);
+  const warningsMessage = getTopicMessage(state, `${topicPrefix}/warnings`);
+  const mutedChildrenArrayMessage = getTopicMessage(state, `${topicPrefix}/mutedchildrenarray`);
+  const execMethodMessage = getTopicMessage(state, `${topicPrefix}/execmethod`);
+  const taskMessage = getTopicMessage(state, `${topicPrefix}/task`);
+  const processMessage = getTopicMessage(state, `${topicPrefix}/process`);
+  const scriptMessage = getTopicMessage(state, `${topicPrefix}/script`);
   const isMessage = getTopicMessage(state, `${topicPrefix}/is`);
   const stsMessage = getTopicMessage(state, `${topicPrefix}/sts`);
   const logMessage = getTopicMessage(state, `${topicPrefix}/log`);
+  const apiOpcuaHmiReqMessage = getTopicMessage(state, `${topicPrefix}/apiopcua/hmireq`);
+  const apiOpcuaHmiRespMessage = getTopicMessage(state, `${topicPrefix}/apiopcua/hmiresp`);
+  const apiOpcuaInternalReqMessage = getTopicMessage(state, `${topicPrefix}/apiopcua/internalreq`);
+  const apiOpcuaInternalRespMessage = getTopicMessage(state, `${topicPrefix}/apiopcua/internalresp`);
+
+  const apiOpcua =
+    apiOpcuaHmiReqMessage || apiOpcuaHmiRespMessage || apiOpcuaInternalReqMessage || apiOpcuaInternalRespMessage
+      ? {
+          hmiReq: getTopicPayload(apiOpcuaHmiReqMessage),
+          hmiResp: getTopicPayload(apiOpcuaHmiRespMessage),
+          internalReq: getTopicPayload(apiOpcuaInternalReqMessage),
+          internalResp: getTopicPayload(apiOpcuaInternalRespMessage),
+        }
+      : undefined;
 
   const result = {
     cfg: getTopicPayload<DeviceCfg>(cfgMessage) ?? undefined,
-    cfgMessage,
-    errors: undefined,
-    warnings: undefined,
+    errors: getTopicPayload<DeviceFaultData>(errorsMessage) ?? undefined,
+    warnings: getTopicPayload<DeviceFaultData>(warningsMessage) ?? undefined,
+    mutedChildrenArray: getTopicPayload<boolean[]>(mutedChildrenArrayMessage) ?? undefined,
+    execMethod: getTopicPayload(execMethodMessage),
+    task: getTopicPayload(taskMessage),
+    process: getTopicPayload(processMessage),
+    script: getTopicPayload(scriptMessage),
+    apiOpcua,
     is: getTopicPayload<DeviceStatus>(isMessage),
-    isMessage,
-    lastSeenAt: getLastSeenAt([cfgMessage, isMessage, stsMessage, logMessage]),
     log: getTopicPayload<DeviceLogData>(logMessage) ?? undefined,
-    logMessage,
     registration: device ?? undefined,
     sts: getTopicPayload<unknown>(stsMessage) ?? undefined,
-    stsMessage,
-    topicPrefix,
   };
 
   deviceRuntimeStateCache.set(deviceId, {
@@ -450,6 +588,30 @@ export function selectDeviceState(state: BridgeStoreState, deviceId: number): De
     result,
     topicPrefix,
     topicsRef: state.topics,
+  });
+
+  return result;
+}
+
+export function selectDeviceComprehensiveState(state: BridgeStoreState, deviceId: number): DeviceComprehensiveState {
+  const meta = selectDeviceMetaData(state, deviceId);
+  const runtime = selectDeviceState(state, deviceId);
+  const cached = deviceComprehensiveStateCache.get(deviceId);
+
+  if (cached && cached.metaRef === meta && cached.runtimeRef === runtime) {
+    return cached.result;
+  }
+
+  const result = {
+    deviceId,
+    meta,
+    runtime,
+  };
+
+  deviceComprehensiveStateCache.set(deviceId, {
+    metaRef: meta,
+    result,
+    runtimeRef: runtime,
   });
 
   return result;

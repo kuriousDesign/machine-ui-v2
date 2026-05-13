@@ -2,7 +2,7 @@
 
 import { SectionCard } from "@/components/section-card";
 import { DeviceIDs } from "@/lib/bridge/sdk-lite";
-import { useDeviceState } from "@/lib/store/zustand-provider";
+import { useDevice, useDeviceComprehensive } from "@/lib/store/zustand-provider";
 
 export default function OperationPage() {
   return (
@@ -25,18 +25,19 @@ export default function OperationPage() {
 }
 
 function VisionOperationCard() {
-  const device = useDeviceState(DeviceIDs.VIS);
+  const device = useDevice(DeviceIDs.VIS);
+  const deviceComprehensive = useDeviceComprehensive(DeviceIDs.VIS);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
       <div className="rounded-[28px] border border-[var(--border)] bg-[var(--surface)] p-5">
         <p className="text-xs uppercase tracking-[0.24em] text-[var(--muted)]">Vision status</p>
-        <p className="mt-3 text-sm text-[var(--muted)]">This card uses `useDeviceState(DeviceIDs.VIS)` and is currently centered on `sts`.</p>
+        <p className="mt-3 text-sm text-[var(--muted)]">This card uses `useDevice(DeviceIDs.VIS)` for runtime data and `useDeviceComprehensive(DeviceIDs.VIS)` when metadata is also needed.</p>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Stat label="Device ID" value={String(DeviceIDs.VIS)} />
-          <Stat label="Topic prefix" value={device.topicPrefix ?? "Pending"} mono />
-          <Stat label="Last seen" value={formatValue(device.lastSeenAt)} />
+          <Stat label="Topic prefix" value={deviceComprehensive.meta.topicPrefix ?? "Pending"} mono />
+          <Stat label="Last seen" value={formatValue(deviceComprehensive.meta.lastSeenAt)} />
           <Stat label="Registration" value={device.registration?.mnemonic ?? "Pending"} />
         </div>
       </div>
@@ -59,7 +60,7 @@ function VisionOperationCard() {
 }
 
 function VisionStsSelectionExample() {
-  const visionSts = useDeviceState(DeviceIDs.VIS, (state) => state.sts);
+  const visionSts = useDevice(DeviceIDs.VIS, (state) => state.sts);
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">

@@ -87,6 +87,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             <StatusBadge label="Bridge" value={bridgeStatus?.opcuaStateLabel ?? "Waiting"} />
             <StatusBadge label="Runtime" value={runtimeLabel} />
             <StatusBadge label="Machine" value={bridgeStatus?.machineId ?? "Unknown"} />
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-300">Broker URL</p>
+              <p className="mt-2 break-all font-mono text-xs leading-5 text-slate-100">{connection.brokerUrl}</p>
+            </div>
           </div>
 
           <nav className="mt-8 space-y-2">
