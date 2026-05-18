@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 
-import { AppShell } from "@/components/app-shell";
+import { FullPage } from "@/components/layout/full-page";
 
 import { Providers } from "./providers";
 import "./globals.css";
@@ -28,10 +28,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${displayFont.variable} ${monoFont.variable}`}>
         <Providers>
-          <AppShell>{children}</AppShell>
+          <FullPage>{children}</FullPage>
         </Providers>
       </body>
     </html>

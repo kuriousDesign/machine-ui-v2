@@ -1,8 +1,23 @@
 @import "tailwindcss";
 
 :root {
+	--radius: 0.625rem;
 	--background: #f5efe4;
 	--foreground: #1e1b16;
+	--card: rgba(255, 252, 247, 0.94);
+	--card-foreground: #1e1b16;
+	--popover: rgba(255, 252, 247, 0.98);
+	--popover-foreground: #1e1b16;
+	--primary: #134e4a;
+	--primary-foreground: #f8fafc;
+	--secondary: #ede2cf;
+	--secondary-foreground: #322617;
+	--muted-surface: rgba(237, 226, 207, 0.64);
+	--muted-foreground-strong: #5f5547;
+	--accent-soft: rgba(19, 78, 74, 0.12);
+	--accent-soft-foreground: #134e4a;
+	--destructive: #9f1239;
+	--destructive-foreground: #fff1f2;
 	--surface: rgba(255, 252, 247, 0.78);
 	--surface-strong: rgba(255, 249, 241, 0.92);
 	--border: rgba(76, 59, 40, 0.16);
@@ -12,6 +27,58 @@
 	--danger: #9f1239;
 	--warning: #92400e;
 	--shadow: 0 24px 60px rgba(33, 23, 10, 0.12);
+	--inactive: #cbd5e1;
+	--inactive-foreground: #0f172a;
+	--resetting: #93c5fd;
+	--resetting-foreground: #0f172a;
+	--idle: #2563eb;
+	--idle-foreground: #ffffff;
+	--running: #16a34a;
+	--running-foreground: #ffffff;
+	--stopping: #f97316;
+	--stopping-foreground: #ffffff;
+	--faulted: #dc2626;
+	--faulted-foreground: #ffffff;
+	--attention: #facc15;
+	--attention-foreground: #1f2937;
+	--recipe-orange-100: #fed7aa;
+	--recipe-orange-200: #fdba74;
+	--recipe-orange-400: #fb923c;
+	--recipe-orange-foreground: #431407;
+	--recipe-blue-100: #bfdbfe;
+	--recipe-blue-200: #93c5fd;
+	--recipe-blue-400: #60a5fa;
+	--recipe-blue-foreground: #172554;
+	--recipe-green-100: #bbf7d0;
+	--recipe-green-200: #86efac;
+	--recipe-green-400: #4ade80;
+	--recipe-green-foreground: #052e16;
+}
+
+.dark {
+	--background: #19140d;
+	--foreground: #f7efe0;
+	--card: rgba(42, 33, 24, 0.92);
+	--card-foreground: #f7efe0;
+	--popover: rgba(36, 29, 22, 0.96);
+	--popover-foreground: #f7efe0;
+	--primary: #5eead4;
+	--primary-foreground: #10211f;
+	--secondary: #2a231a;
+	--secondary-foreground: #efe5d5;
+	--muted-surface: rgba(82, 67, 51, 0.5);
+	--muted-foreground-strong: #d2c3ae;
+	--accent-soft: rgba(94, 234, 212, 0.12);
+	--accent-soft-foreground: #a7f3d0;
+	--surface: rgba(28, 22, 16, 0.84);
+	--surface-strong: rgba(36, 29, 22, 0.94);
+	--border: rgba(231, 218, 197, 0.1);
+	--accent: #2dd4bf;
+	--accent-strong: #99f6e4;
+	--muted: #c4b59e;
+	--danger: #fb7185;
+	--warning: #f59e0b;
+	--shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
 }
 
 * {
@@ -31,6 +98,13 @@ body {
 		radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 24%),
 		linear-gradient(180deg, #f8f3eb 0%, #f2ebde 45%, #ece4d7 100%);
 	font-family: var(--font-display), sans-serif;
+}
+
+.dark body {
+	background:
+		radial-gradient(circle at top left, rgba(45, 212, 191, 0.12), transparent 28%),
+		radial-gradient(circle at top right, rgba(245, 158, 11, 0.1), transparent 22%),
+		linear-gradient(180deg, #16110d 0%, #1b1611 45%, #231b14 100%);
 }
 
 a {
@@ -58,4 +132,15 @@ table {
 th,
 td {
 	text-align: left;
+}
+
+.glass-panel {
+	border: 1px solid var(--border);
+	background: var(--surface-strong);
+	backdrop-filter: blur(18px);
+	box-shadow: var(--shadow);
+}
+
+.panel-muted {
+	background: var(--muted-surface);
 }

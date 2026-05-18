@@ -18,6 +18,9 @@ small machine-specific override surfaces.
 app/
   ... routes and top-level providers
 
+actions/
+hooks/
+
 components/
   bootstrap/
   device/
@@ -46,6 +49,17 @@ machines/
 ### `app/`
 
 Top-level Next routes, route groups, providers, and page composition.
+
+### `actions/`
+
+Thin Next server action entrypoints. These should validate and orchestrate
+app-facing operations, then delegate to `lib/services/` or machine-specific
+action wrappers.
+
+### `hooks/`
+
+Shared client-side React hooks that are app-facing. Keep reusable runtime and
+bridge/device hook primitives in `lib/` when they are core infrastructure.
 
 ### `components/bootstrap/`
 
@@ -126,6 +140,15 @@ next to this and contain only narrow overrides:
 - operation screen composition
 - machine-specific form logic
 - machine-specific feature configuration
+
+Each machine folder should expose a `registry.ts` file that declares:
+
+- the machine identity and matching metadata
+- machine-specific screens/components
+- machine-specific forms
+- machine-specific action wrappers
+- machine-specific device button registries
+- machine-specific bridge-type adapters
 - machine-specific device button registries
 
 ## Migration Guidance

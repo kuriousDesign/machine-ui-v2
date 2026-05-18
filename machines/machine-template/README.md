@@ -8,3 +8,13 @@ Expected contents:
 - operation-screen composition
 - machine-specific form logic
 - custom device button registries
+
+The machine entrypoint should be `registry.ts`.
+
+That registry declares:
+
+- screens/components
+- forms
+- action wrappers
+- bridge-type adapters
+- custom device button groups
