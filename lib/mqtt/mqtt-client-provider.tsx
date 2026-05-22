@@ -44,7 +44,9 @@ function parseEnvelope(topic: string, message: Uint8Array): MqttMessageEnvelope 
 
 export function MqttClientProvider({ children }: { children: React.ReactNode }) {
   const { brokerUrl, options } = useMemo(() => getMqttBrowserConfig(), []);
-  const [phase, setPhase] = useState<MqttConnectionPhase>("idle");
+  const [phase, setPhase] = useState<MqttConnectionPhase>(() =>
+    brokerUrl ? "connecting" : "idle",
+  );
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<MqttClient | null>(null);
   const handlersRef = useRef<Map<string, Set<TopicHandler>>>(new Map());
@@ -65,7 +67,6 @@ export function MqttClientProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   useEffect(() => {
-    setPhase("connecting");
     const client = mqtt.connect(brokerUrl, options);
     clientRef.current = client;
 
