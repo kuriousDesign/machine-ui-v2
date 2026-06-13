@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 
 import { FullPage } from "@/components/layout/full-page";
@@ -31,7 +32,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${displayFont.variable} ${monoFont.variable}`}>
         <Providers>
-          <FullPage>{children}</FullPage>
+          <Suspense fallback={null}>
+            <FullPage>{children}</FullPage>
+          </Suspense>
         </Providers>
       </body>
     </html>
